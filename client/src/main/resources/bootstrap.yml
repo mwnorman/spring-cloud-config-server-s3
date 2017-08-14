@@ -1,0 +1,10 @@
+debug: true
+spring:
+    application:
+        name: fooclient
+    cloud:
+        config:
+            enabled: true
+            s3:
+                bucketName: dfdf
+                prefix: aaa

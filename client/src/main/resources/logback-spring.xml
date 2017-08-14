@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xml>
+<configuration scan="false" debug="true">
+
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+    <!-- override console pattern with 'proper' ISO 8601 date -->
+    <property name="CONSOLE_LOG_PATTERN" value="%date{ISO8601, UTC} -%5level [%15.15t] %-40.40logger{39} - %msg%ex{full}%n"/>
+    
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
+    <contextListener class="ch.qos.logback.classic.jul.LevelChangePropagator">
+        <!-- reset all previous level configurations of all j.u.l. loggers -->
+        <resetJUL>true</resetJUL>
+    </contextListener>
+   
+    <root level="debug">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+</configuration>

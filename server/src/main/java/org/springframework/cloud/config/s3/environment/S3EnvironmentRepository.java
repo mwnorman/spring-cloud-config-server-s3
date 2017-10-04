@@ -21,9 +21,11 @@ import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.S3Object;
 import com.google.common.collect.Maps;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.configuration.ConfigurationException;
 import org.springframework.cloud.config.environment.Environment;
 import org.springframework.cloud.config.environment.PropertySource;
 import org.springframework.cloud.config.s3.CloudConfigS3Properties;
+import org.springframework.cloud.config.s3.yaml.YamlFileConfiguration;
 import org.springframework.cloud.config.server.environment.EnvironmentRepository;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.ConfigurableEnvironment;
@@ -31,6 +33,8 @@ import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.util.Map;
 import java.util.Properties;
 
@@ -92,16 +96,51 @@ public class S3EnvironmentRepository implements EnvironmentRepository, Ordered {
             objectKeyPrefix.append("-").append(label);
         }
         // find properties config file
-        Environment environment = searchEnvironment(application, profile, objectKeyPrefix.toString(), ".properties");
+        Environment environment = searchProperties(application, profile, objectKeyPrefix.toString());
         if(environment == null) {
             // find yml config file
-            environment = searchEnvironment(application, profile, objectKeyPrefix.toString(), ".yml");
+            environment = searchYaml(application, profile, objectKeyPrefix.toString());
         }
         return environment;
     }
 
-    private Environment searchEnvironment(String application, String profile, String objectKeyPrefix, String objectKeySuffix) {
-        String objectKey = objectKeyPrefix + objectKeySuffix;
+    private Environment searchProperties(String application, String profile, String objectKeyPrefix) {
+        String objectKey = objectKeyPrefix + ".properties";
+
+        if(!StringUtils.isEmpty(searchPaths)) {
+            objectKey = searchPaths + objectKey;
+        }
+        log.info("finding S3 resource '{}' from bucket '{}'", objectKey, s3Properties.getBucketName());
+
+        Environment environment;
+        Properties props;
+        Map<String, String> properties;
+        PropertySource propertySource;
+        try {
+            S3Object s3Object = s3Client.getObject(s3Properties.getBucketName(), objectKey);
+            environment = new Environment(application, profile);
+
+            props = new Properties();
+            try (InputStream in = s3Object.getObjectContent()) {
+                props.load(in);
+            } catch (IOException ioex) {
+                log.error(ioex.getMessage());
+                return null;
+            }
+            properties = Maps.fromProperties(props);
+
+            propertySource = new PropertySource(application, properties);
+            environment.add(propertySource);
+        } catch (Exception ex) {
+            log.warn("Properties '{}' not found in S3 bucket '{}'", objectKey, s3Properties.getBucketName());
+            return null;
+        }
+
+        return environment;
+    }
+
+    private Environment searchYaml(String application, String profile, String objectKeyPrefix) {
+        String objectKey = objectKeyPrefix + ".yml";
 
         if(!StringUtils.isEmpty(searchPaths)) {
             objectKey = searchPaths + objectKey;
@@ -111,18 +150,21 @@ public class S3EnvironmentRepository implements EnvironmentRepository, Ordered {
         S3Object s3Object = s3Client.getObject(s3Properties.getBucketName(), objectKey);
         Environment environment = new Environment(application, profile);
 
-        Properties props = new Properties();
+        YamlFileConfiguration yamlFileConfiguration = new YamlFileConfiguration();
         try(InputStream in = s3Object.getObjectContent()) {
-            props.load(in);
-        } catch (IOException ioex) {
-            log.error(ioex.getMessage());
+            Reader targetReader = new InputStreamReader(in);
+            yamlFileConfiguration.load(targetReader);
+        } catch (IOException|ConfigurationException ex) {
+            log.error(ex.getMessage());
             return null;
         }
-        Map<String, String> properties = Maps.fromProperties(props);
+        Map<String, String> properties = yamlFileConfiguration.getProperties();
 
         PropertySource propertySource = new PropertySource(application, properties);
         environment.add(propertySource);
         return environment;
     }
+
+   
 
 }
